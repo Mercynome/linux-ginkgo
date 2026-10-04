@@ -139,10 +139,11 @@ static void himax_reset(struct himax_ts_data *ts)
 	gpiod_set_value_cansleep(ts->gpiod_rst, 0);
 
 	/*
-	 * The downstream driver doesn't contain this delay but is seems safer
-	 * to include it. The range is just a guess that seems to work well.
+	 * The IC needs time to run its internal boot sequence before it can
+	 * service I2C transactions.  Some units need up to ~2 s on cold
+	 * power-on when the firmware is large; use a conservative bound.
 	 */
-	usleep_range(1000, 1100);
+	msleep(2000);
 }
 
 static int himax_read_product_id(struct himax_ts_data *ts, u32 *product_id)
@@ -359,7 +360,21 @@ static int himax_probe(struct i2c_client *client)
 	himax_reset(ts);
 
 	if (ts->chip->check_id) {
-		error = himax_check_product_id(ts);
+		int retries;
+
+		/*
+		 * If the bus is still held by the IC (clock-stretching during
+		 * its internal boot), the first access times out.  Reset the IC
+		 * and retry a few times with increasing wait before giving up.
+		 */
+		for (retries = 0; retries < 3; retries++) {
+			error = himax_check_product_id(ts);
+			if (error != -ETIMEDOUT)
+				break;
+			dev_warn(dev, "I2C timeout on id read, resetting and retrying (%d/3)\n",
+				 retries + 1);
+			himax_reset(ts);
+		}
 		if (error)
 			return error;
 	}

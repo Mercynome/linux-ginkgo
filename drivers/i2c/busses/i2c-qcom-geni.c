@@ -74,7 +74,7 @@ enum geni_i2c_err_code {
 #define PACKING_BYTES_PW	4
 
 #define ABORT_TIMEOUT		HZ
-#define XFER_TIMEOUT		HZ
+#define XFER_TIMEOUT		(3 * HZ)
 #define RST_TIMEOUT		HZ
 
 #define QCOM_I2C_MIN_NUM_OF_MSGS_MULTI_DESC	2
@@ -352,8 +352,14 @@ static irqreturn_t geni_i2c_irq(int irq, void *dev)
 	if (dma && dm_rx_st)
 		writel_relaxed(dm_rx_st, base + SE_DMA_RX_IRQ_CLR);
 
-	/* if this is err with done-bit not set, handle that through timeout. */
+	/*
+	 * On some SoCs (e.g. SM6125) M_CMD_DONE does not fire alongside
+	 * M_CMD_FAILURE for I2C WRITE commands that receive a NACK at the
+	 * address phase.  Treat M_CMD_FAILURE as command-done so that callers
+	 * get -ENXIO immediately instead of waiting for XFER_TIMEOUT.
+	 */
 	if (m_stat & M_CMD_DONE_EN || m_stat & M_CMD_ABORT_EN ||
+	    m_stat & M_CMD_FAILURE_EN ||
 	    dm_tx_st & TX_DMA_DONE || dm_tx_st & TX_RESET_DONE ||
 	    dm_rx_st & RX_DMA_DONE || dm_rx_st & RX_RESET_DONE)
 		complete(&gi2c->done);

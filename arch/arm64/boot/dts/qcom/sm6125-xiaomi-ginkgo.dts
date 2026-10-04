@@ -4,9 +4,179 @@
  */
 /dts-v1/;
 
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/interrupt-controller/irq.h>
 #include "sm6125-xiaomi-ginkgo-common.dtsi"
 
 / {
 	model = "Xiaomi Redmi Note 8";
 	compatible = "xiaomi,ginkgo", "qcom,sm6125";
+
+	/*
+	 * The NT36672A panel requires +5.5V and -5.5V bias rails.
+	 * On ginkgo these are provided by an LCD bias chip enabled via GPIO 93.
+	 * vddneg shares the same enable (both rails from one bias IC).
+	 */
+	panel_vddpos: regulator-panel-vddpos {
+		compatible = "regulator-fixed";
+		regulator-name = "panel-vddpos";
+		regulator-min-microvolt = <5500000>;
+		regulator-max-microvolt = <5500000>;
+		enable-active-high;
+		gpio = <&tlmm 93 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&panel_bias_en_default>;
+	};
+
+	panel_vddneg: regulator-panel-vddneg {
+		compatible = "regulator-fixed";
+		regulator-name = "panel-vddneg";
+		regulator-min-microvolt = <5500000>;
+		regulator-max-microvolt = <5500000>;
+		vin-supply = <&panel_vddpos>;
+		regulator-always-on;
+	};
+
+	/*
+	 * Bit-bang I2C for the touch IC via GPIO14 (SCL) / GPIO15 (SDA).
+	 * The GENI QUP i2c3 is disabled because when the HX83112B holds SCL
+	 * low (clock-stretch during boot), the GENI hardware gets stuck and
+	 * cannot issue an abort STOP.  i2c-gpio handles this gracefully via
+	 * its built-in SCL-toggle bus-recovery path.
+	 */
+	i2c_touch: i2c-touch {
+		compatible = "i2c-gpio";
+		sda-gpios = <&tlmm 15 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		scl-gpios = <&tlmm 14 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		i2c-gpio,delay-us = <5>; /* ~100 kHz */
+		pinctrl-names = "default";
+		pinctrl-0 = <&i2c_touch_gpio_default>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		touchscreen@48 {
+			compatible = "himax,hx83112b";
+			reg = <0x48>;
+			interrupts-extended = <&tlmm 88 IRQ_TYPE_EDGE_FALLING>;
+			reset-gpios = <&tlmm 87 GPIO_ACTIVE_LOW>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&touch_int_default &touch_rst_default>;
+		};
+	};
+};
+
+&vreg_l13a {
+	regulator-min-microvolt = <1800000>;
+	regulator-max-microvolt = <1800000>;
+	regulator-always-on;
+};
+
+&vreg_l21a {
+	regulator-min-microvolt = <2800000>;
+	regulator-max-microvolt = <2800000>;
+	regulator-always-on;
+};
+
+&vreg_l23a {
+	regulator-always-on;
+};
+
+&i2c1 {
+	clock-frequency = <400000>;
+	status = "okay";
+};
+
+/* GENI QUP i2c3 disabled; touch IC accessed via i2c-gpio below */
+&i2c3 {
+	status = "disabled";
+};
+
+&mdss {
+	status = "okay";
+};
+
+&mdss_dsi0 {
+	vdda-supply = <&vreg_l18a>;
+	status = "okay";
+
+	panel@0 {
+		compatible = "tianma,fhd-video";
+		reg = <0>;
+
+		reset-gpios = <&tlmm 90 GPIO_ACTIVE_LOW>;
+		vddio-supply = <&vreg_l12a>;
+		vddpos-supply = <&panel_vddpos>;
+		vddneg-supply = <&panel_vddneg>;
+
+		pinctrl-names = "default", "sleep";
+		pinctrl-0 = <&mdss_dsi_active>;
+		pinctrl-1 = <&mdss_dsi_sleep>;
+
+		port {
+			panel_in: endpoint {
+				remote-endpoint = <&mdss_dsi0_out>;
+			};
+		};
+	};
+};
+
+&mdss_dsi0_out {
+	remote-endpoint = <&panel_in>;
+	data-lanes = <0 1 2 3>;
+};
+
+&mdss_dsi0_phy {
+	status = "okay";
+};
+
+&tlmm {
+	mdss_dsi_active: mdss-dsi-active-state {
+		pins = "gpio90";
+		function = "gpio";
+		drive-strength = <8>;
+		bias-disable;
+	};
+
+	mdss_dsi_sleep: mdss-dsi-sleep-state {
+		pins = "gpio90";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-pull-down;
+	};
+
+	panel_bias_en_default: panel-bias-en-default-state {
+		pins = "gpio93";
+		function = "gpio";
+		drive-strength = <8>;
+		bias-disable;
+		output-high;
+	};
+
+	/*
+	 * GPIO14/15 in open-drain GPIO mode for i2c-gpio bit-banging.
+	 * Pull-ups rely on board-level resistors; internal pull-up is enabled
+	 * as a fallback in case they are marginal.
+	 */
+	i2c_touch_gpio_default: i2c-touch-gpio-default-state {
+		pins = "gpio14", "gpio15";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-pull-up;
+	};
+
+	touch_int_default: touch-int-default-state {
+		pins = "gpio88";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+		input-enable;
+	};
+
+	touch_rst_default: touch-rst-default-state {
+		pins = "gpio87";
+		function = "gpio";
+		drive-strength = <8>;
+		bias-disable;
+		output-low;
+	};
 };
