@@ -321,15 +321,7 @@ static void dsi_mgr_bridge_pre_enable(struct drm_bridge *bridge)
 		return;
 	}
 
-	/* Ginkgo sends panel init commands before starting the video engine. */
-	if (!of_machine_is_compatible("xiaomi,ginkgo"))
-		dsi_mgr_bridge_start_video(bridge);
-}
-
-static void dsi_mgr_bridge_enable(struct drm_bridge *bridge)
-{
-	if (of_machine_is_compatible("xiaomi,ginkgo"))
-		dsi_mgr_bridge_start_video(bridge);
+	dsi_mgr_bridge_start_video(bridge);
 }
 
 void msm_dsi_manager_tpg_enable(void)
@@ -461,7 +453,6 @@ static int dsi_mgr_bridge_attach(struct drm_bridge *bridge,
 static const struct drm_bridge_funcs dsi_mgr_bridge_funcs = {
 	.attach = dsi_mgr_bridge_attach,
 	.pre_enable = dsi_mgr_bridge_pre_enable,
-	.enable = dsi_mgr_bridge_enable,
 	.post_disable = dsi_mgr_bridge_post_disable,
 	.mode_set = dsi_mgr_bridge_mode_set,
 	.mode_valid = dsi_mgr_bridge_mode_valid,
