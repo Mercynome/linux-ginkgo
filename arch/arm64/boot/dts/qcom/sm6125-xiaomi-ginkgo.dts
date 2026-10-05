@@ -128,7 +128,7 @@
 
 &mdss_dsi0 {
 	vdda-supply = <&vreg_l18a>;
-	status = "disabled";
+	status = "okay";
 
 	panel@0 {
 		compatible = "tianma,fhd-video";
@@ -138,6 +138,7 @@
 		vddio-supply = <&vreg_l12a>;
 		vddpos-supply = <&panel_vddpos>;
 		vddneg-supply = <&panel_vddneg>;
+		backlight = <&backlight>;
 
 		pinctrl-names = "default", "sleep";
 		pinctrl-0 = <&mdss_dsi_active>;
@@ -164,7 +165,7 @@
 	reg-names = "dsi_phy", "dsi_phy_lane", "dsi_pll", "dsi_phy_clamp";
 	/* Stock DTBO: vdda-phy = pm6125_l4 (0.9V), vdda-pll = pm6125_l10 (1.8V) */
 	vdda-supply = <&vreg_l4a>;
-	status = "disabled";
+	status = "okay";
 };
 
 &vreg_l4a {
