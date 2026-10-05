@@ -26,6 +26,8 @@
 		gpio = <&tlmm 93 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&panel_bias_en_default>;
+		regulator-always-on;
+		regulator-boot-on;
 	};
 
 	panel_vddneg: regulator-panel-vddneg {
@@ -35,34 +37,26 @@
 		regulator-max-microvolt = <5500000>;
 		vin-supply = <&panel_vddpos>;
 		regulator-always-on;
+		regulator-boot-on;
 	};
 
-	/*
-	 * Bit-bang I2C for the touch IC via GPIO14 (SCL) / GPIO15 (SDA).
-	 * The GENI QUP i2c3 is disabled because when the HX83112B holds SCL
-	 * low (clock-stretch during boot), the GENI hardware gets stuck and
-	 * cannot issue an abort STOP.  i2c-gpio handles this gracefully via
-	 * its built-in SCL-toggle bus-recovery path.
-	 */
-	i2c_touch: i2c-touch {
-		compatible = "i2c-gpio";
-		sda-gpios = <&tlmm 15 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
-		scl-gpios = <&tlmm 14 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
-		i2c-gpio,delay-us = <5>; /* ~100 kHz */
-		pinctrl-names = "default";
-		pinctrl-0 = <&i2c_touch_gpio_default>;
-		#address-cells = <1>;
-		#size-cells = <0>;
+};
 
-		touchscreen@48 {
-			compatible = "himax,hx83112b";
-			reg = <0x48>;
-			interrupts-extended = <&tlmm 88 IRQ_TYPE_EDGE_FALLING>;
-			reset-gpios = <&tlmm 87 GPIO_ACTIVE_LOW>;
-			pinctrl-names = "default";
-			pinctrl-0 = <&touch_int_default &touch_rst_default>;
-		};
-	};
+&vreg_l9a {
+	regulator-min-microvolt = <1800000>;
+	regulator-max-microvolt = <1800000>;
+	regulator-always-on;
+	regulator-boot-on;
+};
+
+&vreg_l12a {
+	regulator-always-on;
+	regulator-boot-on;
+};
+
+&vreg_l18a {
+	regulator-always-on;
+	regulator-boot-on;
 };
 
 &vreg_l13a {
@@ -86,9 +80,40 @@
 	status = "okay";
 };
 
-/* GENI QUP i2c3 disabled; touch IC accessed via i2c-gpio below */
+&spi2 {
+	status = "okay";
+	pinctrl-0 = <&qup_spi2_default>;
+	pinctrl-1 = <&qup_spi2_default>;
+	pinctrl-names = "default", "sleep";
+	/delete-property/ dmas;
+	/delete-property/ dma-names;
+
+	touchscreen@0 {
+		compatible = "novatek,NVT-ts-spi";
+		reg = <0>;
+		spi-max-frequency = <8000000>;
+
+		interrupt-parent = <&tlmm>;
+		interrupts = <88 IRQ_TYPE_EDGE_RISING>;
+
+		novatek,irq-gpios = <&tlmm 88 IRQ_TYPE_EDGE_RISING>;
+		novatek,swrst-n8-addr = <0x3f0fe>;
+		novatek,spi-rd-fast-addr = <0x3f310>;
+		firmware-name = "novatek_ts_tianma_fw.bin";
+		touchscreen-size-x = <1080>;
+		touchscreen-size-y = <2340>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&touch_int_default>;
+	};
+};
+
 &i2c3 {
 	status = "disabled";
+};
+
+&dispcc {
+	status = "okay";
 };
 
 &mdss {
@@ -126,7 +151,24 @@
 };
 
 &mdss_dsi0_phy {
+	reg = <0 0x05e94400 0 0x100>,
+	      <0 0x05e94500 0 0x300>,
+	      <0 0x05e94800 0 0x188>,
+	      <0 0x05e01400 0 0x100>;
+	reg-names = "dsi_phy", "dsi_phy_lane", "dsi_pll", "dsi_phy_clamp";
+	/* Stock DTBO: vdda-phy = pm6125_l4 (0.9V), vdda-pll = pm6125_l10 (1.8V) */
+	vdda-supply = <&vreg_l4a>;
 	status = "okay";
+};
+
+&vreg_l4a {
+	regulator-always-on;
+	regulator-boot-on;
+};
+
+&vreg_l10a {
+	regulator-always-on;
+	regulator-boot-on;
 };
 
 &tlmm {
@@ -152,31 +194,11 @@
 		output-high;
 	};
 
-	/*
-	 * GPIO14/15 in open-drain GPIO mode for i2c-gpio bit-banging.
-	 * Pull-ups rely on board-level resistors; internal pull-up is enabled
-	 * as a fallback in case they are marginal.
-	 */
-	i2c_touch_gpio_default: i2c-touch-gpio-default-state {
-		pins = "gpio14", "gpio15";
-		function = "gpio";
-		drive-strength = <2>;
-		bias-pull-up;
-	};
-
 	touch_int_default: touch-int-default-state {
 		pins = "gpio88";
 		function = "gpio";
 		drive-strength = <2>;
-		bias-disable;
+		bias-pull-up;
 		input-enable;
-	};
-
-	touch_rst_default: touch-rst-default-state {
-		pins = "gpio87";
-		function = "gpio";
-		drive-strength = <8>;
-		bias-disable;
-		output-low;
 	};
 };
