@@ -642,6 +642,11 @@ static int dsi_phy_driver_probe(struct platform_device *pdev)
 
 	phy->regulator_ldo_mode = of_property_read_bool(dev->of_node,
 				"qcom,dsi-phy-regulator-ldo-mode");
+	if (platform_get_resource_byname(pdev, IORESOURCE_MEM, "dsi_phy_clamp")) {
+		phy->clamp_base = msm_ioremap(pdev, "dsi_phy_clamp");
+		if (IS_ERR(phy->clamp_base))
+			return PTR_ERR(phy->clamp_base);
+	}
 	if (!of_property_read_u32(dev->of_node, "phy-type", &phy_type))
 		phy->cphy_mode = (phy_type == PHY_TYPE_CPHY);
 
@@ -758,6 +763,14 @@ int msm_dsi_phy_enable(struct msm_dsi_phy *phy,
 		DRM_DEV_ERROR(dev, "%s: regulator enable failed, %d\n",
 			__func__, ret);
 		goto reg_en_fail;
+	}
+
+	if (phy->clamp_base) {
+		u32 val = readl(phy->clamp_base + 0x54);
+
+		writel(val & ~BIT(0), phy->clamp_base + 0x54);
+		dev_info(dev, "ginkgo-diag: ULPS clamp %08x -> %08x\n",
+			 val, readl(phy->clamp_base + 0x54));
 	}
 
 	ret = phy->cfg->ops.enable(phy, clk_req);

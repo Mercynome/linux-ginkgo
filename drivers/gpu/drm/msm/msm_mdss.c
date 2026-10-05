@@ -7,6 +7,7 @@
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/interconnect.h>
+#include <linux/module.h>
 #include <linux/irq.h>
 #include <linux/irqchip.h>
 #include <linux/irqdesc.h>
@@ -27,6 +28,16 @@
 struct msm_mdss_data {
 	u32 reg_bus_bw;
 };
+
+static bool mdss_trace;
+module_param(mdss_trace, bool, 0600);
+static bool ginkgo_skip_mdss_reset;
+module_param(ginkgo_skip_mdss_reset, bool, 0400);
+
+#define mdss_diag(dev, fmt, ...) do { \
+	if (mdss_trace) \
+		dev_info(dev, "ginkgo-mdss: " fmt, ##__VA_ARGS__); \
+} while (0)
 
 struct msm_mdss {
 	struct device *dev;
@@ -81,7 +92,11 @@ static void msm_mdss_irq(struct irq_desc *desc)
 
 	chained_irq_enter(chip, desc);
 
+	if (mdss_trace)
+		pr_info_once("ginkgo-mdss: first IRQ before status read\n");
 	interrupts = readl_relaxed(msm_mdss->mmio + REG_MDSS_HW_INTR_STATUS);
+	if (mdss_trace)
+		pr_info_once("ginkgo-mdss: first IRQ status=%#x\n", interrupts);
 
 	while (interrupts) {
 		irq_hw_number_t hwirq = fls(interrupts) - 1;
@@ -252,7 +267,9 @@ static int msm_mdss_enable(struct msm_mdss *msm_mdss)
 	 * correct OPP has been set in one of the MDPn or DPU drivers, or during initial probe,
 	 * before the RPM(H)PD sync_state is done.
 	 */
+	mdss_diag(msm_mdss->dev, "enable clocks begin\n");
 	ret = clk_bulk_prepare_enable(msm_mdss->num_clocks, msm_mdss->clocks);
+	mdss_diag(msm_mdss->dev, "enable clocks result=%d\n", ret);
 	if (ret) {
 		dev_err(msm_mdss->dev, "clock enable failed, ret:%d\n", ret);
 		return ret;
@@ -265,7 +282,9 @@ static int msm_mdss_enable(struct msm_mdss *msm_mdss)
 	if (msm_mdss->is_mdp5 || !msm_mdss->mdss_data)
 		return 0;
 
+	mdss_diag(msm_mdss->dev, "read HW_VERSION begin\n");
 	hw_rev = readl_relaxed(msm_mdss->mmio + REG_MDSS_HW_VERSION);
+	mdss_diag(msm_mdss->dev, "HW_VERSION=%#x\n", hw_rev);
 
 	if (hw_rev >= MDSS_HW_VER(6, 0, 0))
 		msm_mdss_6x_setup_ubwc(msm_mdss);
@@ -274,6 +293,7 @@ static int msm_mdss_enable(struct msm_mdss *msm_mdss)
 	else if (hw_rev >= MDSS_HW_VER(4, 0, 0))
 		msm_mdss_4x_setup_ubwc(msm_mdss);
 	/* else UBWC 1.0 or none, no params to program */
+	mdss_diag(msm_mdss->dev, "UBWC complete\n");
 
 	return ret;
 }
@@ -282,7 +302,9 @@ static int msm_mdss_disable(struct msm_mdss *msm_mdss)
 {
 	int i;
 
+	mdss_diag(msm_mdss->dev, "disable clocks begin\n");
 	clk_bulk_disable_unprepare(msm_mdss->num_clocks, msm_mdss->clocks);
+	mdss_diag(msm_mdss->dev, "disable clocks complete\n");
 
 	for (i = 0; i < msm_mdss->num_mdp_paths; i++)
 		icc_set_bw(msm_mdss->mdp_path[i], 0, 0);
@@ -310,6 +332,11 @@ static int msm_mdss_reset(struct device *dev)
 {
 	struct reset_control *reset;
 
+	if (of_machine_is_compatible("xiaomi,ginkgo")) {
+		dev_info(dev, "ginkgo-mdss: skipping core reset on Ginkgo\n");
+		return 0;
+	}
+
 	reset = reset_control_get_optional_exclusive(dev, NULL);
 	if (!reset) {
 		/* Optional reset not specified */
@@ -319,13 +346,17 @@ static int msm_mdss_reset(struct device *dev)
 				     "failed to acquire mdss reset\n");
 	}
 
+	mdss_diag(dev, "assert reset begin\n");
 	reset_control_assert(reset);
+	mdss_diag(dev, "assert reset complete\n");
 	/*
 	 * Tests indicate that reset has to be held for some period of time,
 	 * make it one frame in a typical system
 	 */
 	msleep(20);
+	mdss_diag(dev, "deassert reset begin\n");
 	reset_control_deassert(reset);
+	mdss_diag(dev, "deassert reset complete\n");
 
 	reset_control_put(reset);
 
@@ -418,8 +449,10 @@ static struct msm_mdss *msm_mdss_init(struct platform_device *pdev, bool is_mdp5
 	if (ret)
 		return ERR_PTR(ret);
 
+	mdss_diag(&pdev->dev, "install IRQ handler begin\n");
 	irq_set_chained_handler_and_data(irq, msm_mdss_irq,
 					 msm_mdss);
+	mdss_diag(&pdev->dev, "install IRQ handler complete\n");
 
 	pm_runtime_enable(&pdev->dev);
 
@@ -473,6 +506,7 @@ static int mdss_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	int ret;
 
+	mdss_diag(dev, "probe begin\n");
 	mdss = msm_mdss_init(pdev, is_mdp5);
 	if (IS_ERR(mdss))
 		return PTR_ERR(mdss);
@@ -485,7 +519,9 @@ static int mdss_probe(struct platform_device *pdev)
 	 * Populate the children devices, find the MDP5/DPU node, and then add
 	 * the interfaces to our components list.
 	 */
+	mdss_diag(dev, "populate children begin\n");
 	ret = of_platform_populate(dev->of_node, NULL, NULL, dev);
+	mdss_diag(dev, "populate children result=%d\n", ret);
 	if (ret) {
 		DRM_DEV_ERROR(dev, "failed to populate children devices\n");
 		msm_mdss_destroy(mdss);
@@ -572,7 +608,11 @@ static struct platform_driver mdss_platform_driver = {
 
 void __init msm_mdss_register(void)
 {
+	if (mdss_trace)
+		pr_info("ginkgo-mdss: register driver begin\n");
 	platform_driver_register(&mdss_platform_driver);
+	if (mdss_trace)
+		pr_info("ginkgo-mdss: register driver complete\n");
 }
 
 void __exit msm_mdss_unregister(void)

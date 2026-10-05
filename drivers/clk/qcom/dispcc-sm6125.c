@@ -5,6 +5,7 @@
 
 #include <linux/clk-provider.h>
 #include <linux/module.h>
+#include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/regmap.h>
 
@@ -620,6 +621,15 @@ static struct gdsc mdss_gdsc = {
 	.flags = HW_CTRL,
 };
 
+static struct gdsc mdss_gdsc_ginkgo = {
+	.gdscr = 0x3000,
+	.pd = {
+		.name = "mdss_gdsc",
+	},
+	.pwrsts = PWRSTS_OFF_ON,
+	.flags = RETAIN_FF_ENABLE,
+};
+
 static struct clk_regmap *disp_cc_sm6125_clocks[] = {
 	[DISP_CC_MDSS_AHB_CLK] = &disp_cc_mdss_ahb_clk.clkr,
 	[DISP_CC_MDSS_AHB_CLK_SRC] = &disp_cc_mdss_ahb_clk_src.clkr,
@@ -688,6 +698,10 @@ static int disp_cc_sm6125_probe(struct platform_device *pdev)
 		return PTR_ERR(regmap);
 
 	clk_alpha_pll_configure(&disp_cc_pll0, regmap, &disp_cc_pll0_config);
+
+	/* Keep the Ginkgo display domain under software control during bring-up. */
+	if (of_machine_is_compatible("xiaomi,ginkgo"))
+		disp_cc_sm6125_gdscs[MDSS_GDSC] = &mdss_gdsc_ginkgo;
 
 	return qcom_cc_really_probe(&pdev->dev, &disp_cc_sm6125_desc, regmap);
 }

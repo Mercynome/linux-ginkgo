@@ -133,6 +133,16 @@ static int update_config(struct clk_rcg2 *rcg)
 		udelay(1);
 	}
 
+	/*
+	 * Display link RCGs are sourced from the DSI PHY PLL, which is only
+	 * brought up when the link clocks are prepared. The update latches
+	 * once the PLL starts, so do not fail the rate change.
+	 */
+	if (clk_hw_get_flags(hw) & CLK_GET_RATE_NOCACHE) {
+		pr_debug("%s: rcg update pending until source runs\n", name);
+		return 0;
+	}
+
 	WARN(1, "%s: rcg didn't update its configuration.", name);
 	return -EBUSY;
 }

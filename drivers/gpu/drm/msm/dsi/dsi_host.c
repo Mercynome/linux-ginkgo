@@ -1459,9 +1459,16 @@ static int dsi_cmd_dma_tx(struct msm_dsi_host *msm_host, int len)
 		ret = wait_for_completion_timeout(&msm_host->dma_comp,
 					msecs_to_jiffies(200));
 		DBG("ret=%d", ret);
-		if (ret == 0)
+		if (ret == 0) {
+			pr_err("ginkgo-dsi: DMA timeout ctrl=%08x status=%08x fifo=%08x lane=%08x clk=%08x timeout=%08x\n",
+			       dsi_read(msm_host, REG_DSI_CTRL),
+			       dsi_read(msm_host, REG_DSI_STATUS0),
+			       dsi_read(msm_host, REG_DSI_FIFO_STATUS),
+			       dsi_read(msm_host, REG_DSI_LANE_STATUS),
+			       dsi_read(msm_host, REG_DSI_CLK_STATUS),
+			       dsi_read(msm_host, REG_DSI_TIMEOUT_STATUS));
 			ret = -ETIMEDOUT;
-		else
+		} else
 			ret = len;
 	} else {
 		ret = len;
@@ -1570,7 +1577,8 @@ static void dsi_err_worker(struct work_struct *work)
 	u32 status = msm_host->err_work_state;
 
 	pr_err_ratelimited("%s: status=%x\n", __func__, status);
-	if (status & DSI_ERR_STATE_MDP_FIFO_UNDERFLOW)
+	if ((status & DSI_ERR_STATE_MDP_FIFO_UNDERFLOW) &&
+	    !(msm_host->mode_flags & MIPI_DSI_MODE_VIDEO))
 		dsi_sw_reset(msm_host);
 
 	/* It is safe to clear here because error irq is disabled. */

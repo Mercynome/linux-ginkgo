@@ -275,7 +275,7 @@ static void dsi_mgr_bridge_power_off(struct drm_bridge *bridge)
 	dsi_mgr_phy_disable(id);
 }
 
-static void dsi_mgr_bridge_pre_enable(struct drm_bridge *bridge)
+static void dsi_mgr_bridge_start_video(struct drm_bridge *bridge)
 {
 	int id = dsi_mgr_bridge_get_id(bridge);
 	struct msm_dsi *msm_dsi = dsi_mgr_get_dsi(id);
@@ -289,12 +289,6 @@ static void dsi_mgr_bridge_pre_enable(struct drm_bridge *bridge)
 	/* Do nothing with the host if it is slave-DSI in case of bonded DSI */
 	if (is_bonded_dsi && !IS_MASTER_DSI_LINK(id))
 		return;
-
-	ret = dsi_mgr_bridge_power_on(bridge);
-	if (ret) {
-		dev_err(&msm_dsi->pdev->dev, "Power on failed: %d\n", ret);
-		return;
-	}
 
 	ret = msm_dsi_host_enable(host);
 	if (ret) {
@@ -316,6 +310,26 @@ host1_en_fail:
 	msm_dsi_host_disable(host);
 host_en_fail:
 	dsi_mgr_bridge_power_off(bridge);
+}
+
+static void dsi_mgr_bridge_pre_enable(struct drm_bridge *bridge)
+{
+	int ret = dsi_mgr_bridge_power_on(bridge);
+
+	if (ret) {
+		pr_err("%s: DSI power on failed: %d\n", __func__, ret);
+		return;
+	}
+
+	/* Ginkgo sends panel init commands before starting the video engine. */
+	if (!of_machine_is_compatible("xiaomi,ginkgo"))
+		dsi_mgr_bridge_start_video(bridge);
+}
+
+static void dsi_mgr_bridge_enable(struct drm_bridge *bridge)
+{
+	if (of_machine_is_compatible("xiaomi,ginkgo"))
+		dsi_mgr_bridge_start_video(bridge);
 }
 
 void msm_dsi_manager_tpg_enable(void)
@@ -447,6 +461,7 @@ static int dsi_mgr_bridge_attach(struct drm_bridge *bridge,
 static const struct drm_bridge_funcs dsi_mgr_bridge_funcs = {
 	.attach = dsi_mgr_bridge_attach,
 	.pre_enable = dsi_mgr_bridge_pre_enable,
+	.enable = dsi_mgr_bridge_enable,
 	.post_disable = dsi_mgr_bridge_post_disable,
 	.mode_set = dsi_mgr_bridge_mode_set,
 	.mode_valid = dsi_mgr_bridge_mode_valid,

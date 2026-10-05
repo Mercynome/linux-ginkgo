@@ -100,6 +100,7 @@ struct msm_dsi_phy {
 	void __iomem *pll_base;
 	void __iomem *reg_base;
 	void __iomem *lane_base;
+	void __iomem *clamp_base;
 	phys_addr_t base_size;
 	phys_addr_t pll_size;
 	phys_addr_t reg_size;

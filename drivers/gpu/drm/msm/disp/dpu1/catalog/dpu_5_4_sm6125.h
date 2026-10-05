@@ -156,7 +156,7 @@ static const struct dpu_intf_cfg sm6125_intf[] = {
 		.base = 0x6a800, .len = 0x2c0,
 		.type = INTF_DSI,
 		.controller_id = 0,
-		.prog_fetch_lines_worst_case = 24,
+		.prog_fetch_lines_worst_case = 0,
 		.intr_underrun = DPU_IRQ_IDX(MDP_SSPP_TOP0_INTR, 26),
 		.intr_vsync = DPU_IRQ_IDX(MDP_SSPP_TOP0_INTR, 27),
 		.intr_tear_rd_ptr = DPU_IRQ_IDX(MDP_INTF1_TEAR_INTR, 2),
@@ -188,7 +188,7 @@ static const struct dpu_perf_cfg sm6125_perf_data = {
 		{.rd_enable = 1, .wr_enable = 1},
 		{.rd_enable = 1, .wr_enable = 0}
 	},
-	.clk_inefficiency_factor = 105,
+	.clk_inefficiency_factor = 218,
 	.bw_inefficiency_factor = 120,
 };
 
